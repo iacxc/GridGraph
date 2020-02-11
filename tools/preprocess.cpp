@@ -38,7 +38,7 @@ Copyright (c) 2014-2015 Xiaowei Zhu, Tsinghua University
 long PAGESIZE = 4096;
 
 void generate_edge_grid(std::string input, std::string output, VertexId vertices, int partitions, int edge_type) {
-	int parallelism = std::thread::hardware_concurrency();
+	int n_thread = std::thread::hardware_concurrency();
 	int edge_unit;
 	EdgeId edges;
 	switch (edge_type) {
@@ -56,13 +56,13 @@ void generate_edge_grid(std::string input, std::string output, VertexId vertices
 	}
 	printf("vertices = %d, edges = %ld\n", vertices, edges);
 
-	char ** buffers = new char * [parallelism*2];
-	bool * occupied = new bool [parallelism*2];
-	for (int i=0;i<parallelism*2;i++) {
+	char ** buffers = new char * [n_thread*2];
+	bool * occupied = new bool [n_thread*2];
+	for (int i=0;i<n_thread*2;i++) {
 		buffers[i] = (char *)memalign(PAGESIZE, IOSIZE);
 		occupied[i] = false;
 	}
-	Queue<std::tuple<int, long> > tasks(parallelism);
+	Queue<std::tuple<int, long> > tasks(n_thread);
 	int ** fout;
 	std::mutex ** mutexes;
 	fout = new int * [partitions];
@@ -91,7 +91,7 @@ void generate_edge_grid(std::string input, std::string output, VertexId vertices
 	}
 
 	std::vector<std::thread> threads;
-	for (int ti=0;ti<parallelism;ti++) {
+	for (int ti=0;ti<n_thread;ti++) {
 		threads.emplace_back([&]() {
 			char * local_buffer = (char *) memalign(PAGESIZE, IOSIZE);
 			int * local_grid_offset = new int [partitions * partitions];
@@ -172,17 +172,17 @@ void generate_edge_grid(std::string input, std::string output, VertexId vertices
 		printf("progress: %.2f%%\r", 100. * read_bytes / total_bytes);
 		fflush(stdout);
 		while (occupied[cursor]) {
-			cursor = (cursor + 1) % (parallelism * 2);
+			cursor = (cursor + 1) % (n_thread * 2);
 		}
 	}
 	close(fin);
 	assert(read_bytes==edges*edge_unit);
 
-	for (int ti=0;ti<parallelism;ti++) {
+	for (int ti=0;ti<n_thread;ti++) {
 		tasks.push(std::make_tuple(-1, 0));
 	}
 
-	for (int ti=0;ti<parallelism;ti++) {
+	for (int ti=0;ti<n_thread;ti++) {
 		threads[ti].join();
 	}
 
